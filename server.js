@@ -31,8 +31,14 @@ app.post("/api/claude", async (req, res) => {
     let body = req.body;
     let data = await callClaudeWithRetry(body);
 
-    if (!data || typeof data !== "object") {
-      return res.status(500).json({ error: "Invalid response from Anthropic API" });
+    if (!data) {
+      return res.status(500).json({ error: "Empty response from Anthropic API" });
+    }
+    if (typeof data !== "object") {
+      return res.status(500).json({ error: `Response is not an object: ${typeof data}` });
+    }
+    if (!data.content && !data.error) {
+      return res.status(500).json({ error: `Missing content in response: ${JSON.stringify(data).slice(0, 200)}` });
     }
 
     // Agentic loop
@@ -100,9 +106,16 @@ async function callClaudeWithRetry(body, retries = 3) {
         throw new Error(`Anthropic API ${response.status}: ${error}`);
       }
 
-      const data = await response.json();
+      let data;
+      try {
+        data = await response.json();
+      } catch (parseErr) {
+        const text = await response.text();
+        throw new Error(`Failed to parse JSON: ${text.slice(0, 200)}`);
+      }
+
       if (!data || typeof data !== "object") {
-        throw new Error("Invalid JSON response from Anthropic API");
+        throw new Error(`Invalid response object: ${JSON.stringify(data).slice(0, 200)}`);
       }
       return data;
     } catch (err) {
