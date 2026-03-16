@@ -1,0 +1,15 @@
+{
+  "rewrites": [
+    { "source": "/api/claude", "destination": "/api/claude" },
+    { "source": "/api/storage/:key", "destination": "/api/storage/[key]" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ],
+  "functions": {
+    "api/claude.js": {
+      "maxDuration": 120
+    },
+    "api/storage/[key].js": {
+      "maxDuration": 10
+    }
+  }
+}
