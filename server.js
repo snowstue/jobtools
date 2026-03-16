@@ -103,9 +103,11 @@ async function callClaudeWithRetry(body, retries = 3) {
         continue;
       }
 
+      // Read body once (can only be done once per response)
+      const bodyText = await response.text();
+
       if (!response.ok) {
-        const text = await response.text();
-        lastError = new Error(`Anthropic API ${response.status}: ${text.slice(0, 300)}`);
+        lastError = new Error(`Anthropic API ${response.status}: ${bodyText.slice(0, 300)}`);
         if (i === retries - 1) throw lastError;
         console.error(`Attempt ${i + 1} failed:`, lastError.message);
         continue;
@@ -113,14 +115,21 @@ async function callClaudeWithRetry(body, retries = 3) {
 
       const contentType = response.headers.get("content-type");
       if (!contentType || !contentType.includes("application/json")) {
-        const text = await response.text();
-        lastError = new Error(`Not JSON response. Content-Type: ${contentType}, Body: ${text.slice(0, 200)}`);
+        lastError = new Error(`Not JSON response. Content-Type: ${contentType}, Body: ${bodyText.slice(0, 200)}`);
         if (i === retries - 1) throw lastError;
         console.error(`Attempt ${i + 1} failed:`, lastError.message);
         continue;
       }
 
-      let data = await response.json();
+      let data;
+      try {
+        data = JSON.parse(bodyText);
+      } catch (parseErr) {
+        lastError = new Error(`Failed to parse JSON: ${bodyText.slice(0, 200)}`);
+        if (i === retries - 1) throw lastError;
+        console.error(`Attempt ${i + 1} failed:`, lastError.message);
+        continue;
+      }
 
       if (!data) {
         lastError = new Error("Response body is null or undefined");
