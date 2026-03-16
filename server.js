@@ -31,11 +31,15 @@ app.post("/api/claude", async (req, res) => {
     let body = req.body;
     let data = await callClaudeWithRetry(body);
 
+    if (!data || typeof data !== "object") {
+      return res.status(500).json({ error: "Invalid response from Anthropic API" });
+    }
+
     // Agentic loop
     let iterations = 0;
     const MAX_ITER = 8;
 
-    while (data.stop_reason === "tool_use" && iterations < MAX_ITER) {
+    while (data && data.stop_reason === "tool_use" && iterations < MAX_ITER) {
       iterations++;
       const toolUseBlocks = data.content.filter((b) => b.type === "tool_use");
       if (toolUseBlocks.length === 0) break;
@@ -96,9 +100,14 @@ async function callClaudeWithRetry(body, retries = 3) {
         throw new Error(`Anthropic API ${response.status}: ${error}`);
       }
 
-      return await response.json();
+      const data = await response.json();
+      if (!data || typeof data !== "object") {
+        throw new Error("Invalid JSON response from Anthropic API");
+      }
+      return data;
     } catch (err) {
       if (i === retries - 1) throw err;
+      console.error(`Attempt ${i + 1} failed:`, err.message);
     }
   }
 }
