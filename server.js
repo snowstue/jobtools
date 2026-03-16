@@ -29,23 +29,7 @@ app.post("/api/claude", async (req, res) => {
 
   try {
     let body = req.body;
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": API_KEY,
-        "anthropic-version": "2023-06-01",
-        "anthropic-beta": "web-search-2025-03-05",
-      },
-      body: JSON.stringify(body),
-    });
-
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`Anthropic API ${response.status}: ${error}`);
-    }
-
-    let data = await response.json();
+    let data = await callClaudeWithRetry(body);
 
     // Agentic loop
     let iterations = 0;
@@ -71,23 +55,7 @@ app.post("/api/claude", async (req, res) => {
         ],
       };
 
-      const loopResponse = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": API_KEY,
-          "anthropic-version": "2023-06-01",
-          "anthropic-beta": "web-search-2025-03-05",
-        },
-        body: JSON.stringify(body),
-      });
-
-      if (!loopResponse.ok) {
-        const error = await loopResponse.text();
-        throw new Error(`Anthropic API ${loopResponse.status}: ${error}`);
-      }
-
-      data = await loopResponse.json();
+      data = await callClaudeWithRetry(body);
     }
 
     res.json(data);
@@ -100,6 +68,40 @@ app.post("/api/claude", async (req, res) => {
 app.get("*", (req, res) => {
   res.sendFile(join(__dirname, "dist", "index.html"));
 });
+
+// Helper: retry with exponential backoff for rate limits
+async function callClaudeWithRetry(body, retries = 3) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": API_KEY,
+          "anthropic-version": "2023-06-01",
+          "anthropic-beta": "web-search-2025-03-05",
+        },
+        body: JSON.stringify(body),
+      });
+
+      if (response.status === 429) {
+        const wait = Math.pow(2, i) * 1000; // 1s, 2s, 4s
+        console.log(`Rate limited. Waiting ${wait}ms before retry ${i + 1}/${retries}`);
+        await new Promise(r => setTimeout(r, wait));
+        continue;
+      }
+
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`Anthropic API ${response.status}: ${error}`);
+      }
+
+      return await response.json();
+    } catch (err) {
+      if (i === retries - 1) throw err;
+    }
+  }
+}
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
