@@ -29,7 +29,7 @@ app.post("/api/claude", async (req, res) => {
 
   try {
     let body = req.body;
-    let data = await fetch("https://api.anthropic.com/v1/messages", {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -38,10 +38,14 @@ app.post("/api/claude", async (req, res) => {
         "anthropic-beta": "web-search-2025-03-05",
       },
       body: JSON.stringify(body),
-    }).then((r) => {
-      if (!r.ok) throw new Error(`Anthropic API ${r.status}`);
-      return r.json();
     });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Anthropic API ${response.status}: ${error}`);
+    }
+
+    let data = await response.json();
 
     // Agentic loop
     let iterations = 0;
@@ -67,7 +71,7 @@ app.post("/api/claude", async (req, res) => {
         ],
       };
 
-      data = await fetch("https://api.anthropic.com/v1/messages", {
+      const loopResponse = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -76,10 +80,14 @@ app.post("/api/claude", async (req, res) => {
           "anthropic-beta": "web-search-2025-03-05",
         },
         body: JSON.stringify(body),
-      }).then((r) => {
-        if (!r.ok) throw new Error(`Anthropic API ${r.status}`);
-        return r.json();
       });
+
+      if (!loopResponse.ok) {
+        const error = await loopResponse.text();
+        throw new Error(`Anthropic API ${loopResponse.status}: ${error}`);
+      }
+
+      data = await loopResponse.json();
     }
 
     res.json(data);
