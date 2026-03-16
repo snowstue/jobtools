@@ -81,6 +81,8 @@ app.get("*", (req, res) => {
 
 // Helper: retry with exponential backoff for rate limits
 async function callClaudeWithRetry(body, retries = 3) {
+  let lastError = null;
+
   for (let i = 0; i < retries; i++) {
     try {
       const response = await fetch("https://api.anthropic.com/v1/messages", {
@@ -102,27 +104,47 @@ async function callClaudeWithRetry(body, retries = 3) {
       }
 
       if (!response.ok) {
-        const error = await response.text();
-        throw new Error(`Anthropic API ${response.status}: ${error}`);
-      }
-
-      let data;
-      try {
-        data = await response.json();
-      } catch (parseErr) {
         const text = await response.text();
-        throw new Error(`Failed to parse JSON: ${text.slice(0, 200)}`);
+        lastError = new Error(`Anthropic API ${response.status}: ${text.slice(0, 300)}`);
+        if (i === retries - 1) throw lastError;
+        console.error(`Attempt ${i + 1} failed:`, lastError.message);
+        continue;
       }
 
-      if (!data || typeof data !== "object") {
-        throw new Error(`Invalid response object: ${JSON.stringify(data).slice(0, 200)}`);
+      const contentType = response.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        const text = await response.text();
+        lastError = new Error(`Not JSON response. Content-Type: ${contentType}, Body: ${text.slice(0, 200)}`);
+        if (i === retries - 1) throw lastError;
+        console.error(`Attempt ${i + 1} failed:`, lastError.message);
+        continue;
       }
+
+      let data = await response.json();
+
+      if (!data) {
+        lastError = new Error("Response body is null or undefined");
+        if (i === retries - 1) throw lastError;
+        console.error(`Attempt ${i + 1} failed:`, lastError.message);
+        continue;
+      }
+
+      if (typeof data !== "object") {
+        lastError = new Error(`Response is ${typeof data}, not object`);
+        if (i === retries - 1) throw lastError;
+        console.error(`Attempt ${i + 1} failed:`, lastError.message);
+        continue;
+      }
+
       return data;
     } catch (err) {
+      lastError = err;
       if (i === retries - 1) throw err;
-      console.error(`Attempt ${i + 1} failed:`, err.message);
+      console.error(`Attempt ${i + 1}/${retries} failed:`, err.message);
     }
   }
+
+  throw lastError || new Error("callClaudeWithRetry failed without error details");
 }
 
 app.listen(PORT, () => {
